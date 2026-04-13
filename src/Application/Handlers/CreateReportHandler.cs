@@ -24,15 +24,32 @@ namespace SecurityReport.Application.Handlers
                 Id = System.Guid.NewGuid(),
                 Titulo = request.Titulo,
                 Descripcion = request.Descripcion,
+                Observaciones = string.Empty,
+                PersonasAfectadas = request.PersonasAfectadas,
+                TieneTestigos = request.TieneTestigos,
                 AreaId = request.AreaId,
                 EstadoReporteId = request.EstadoReporteId,
+                TipoReporteId = request.TipoReporteId,
                 ReportadoPorId = request.ReportadoPorId,
-                FechaReporte = System.DateTime.UtcNow
+                FechaReporte = System.DateTime.UtcNow,
+                CreatedAt = System.DateTime.UtcNow,
+                UpdatedAt = System.DateTime.UtcNow
             };
 
             await _repo.AddAsync(r);
 
-            return new ReportDto(r.Id, r.Titulo, r.Descripcion, r.AreaId, r.EstadoReporteId, r.ReportadoPorId, r.FechaReporte);
+            return new ReportDto(
+                r.Id,
+                r.Titulo,
+                r.Descripcion,
+                r.Observaciones,
+                r.AreaId,
+                r.EstadoReporteId,
+                r.ReportadoPorId,
+                r.FechaReporte,
+                r.PersonasAfectadas,
+                r.TieneTestigos,
+                r.PlanAccionJson);
         }
     }
 }

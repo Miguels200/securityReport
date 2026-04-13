@@ -31,4 +31,27 @@ namespace SecurityReport.Infrastructure.Services
             return blobClient.Uri.ToString();
         }
     }
+
+    public class NullBlobStorageService : IBlobStorageService
+    {
+        public async Task<string> UploadAsync(string container, string fileName, Stream content, string contentType)
+        {
+            // Desarrollo sin Azure Blob: guardar en disco local y exponer por /uploads.
+            var safeRelativePath = fileName.Replace('\\', '/');
+            var root = Path.Combine(AppContext.BaseDirectory, "uploads", container);
+            var fullPath = Path.Combine(root, safeRelativePath.Replace('/', Path.DirectorySeparatorChar));
+            var directory = Path.GetDirectoryName(fullPath);
+            if (!string.IsNullOrWhiteSpace(directory))
+            {
+                Directory.CreateDirectory(directory);
+            }
+
+            using (var output = File.Create(fullPath))
+            {
+                await content.CopyToAsync(output);
+            }
+
+            return $"/uploads/{container}/{safeRelativePath}";
+        }
+    }
 }

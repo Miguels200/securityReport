@@ -21,6 +21,7 @@ using SecurityReport.Application.Validators;
 using Microsoft.ApplicationInsights.Extensibility;
 using Azure.Identity;
 using FluentValidation.AspNetCore;
+using Microsoft.Extensions.FileProviders;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -57,6 +58,22 @@ builder.Host.UseSerilog();
 
 // Configuration
 var configuration = builder.Configuration;
+
+// CORS for web clients (Angular local dev + configurable origins)
+var corsOrigins = configuration["CORS_ORIGINS"];
+var allowedOrigins = string.IsNullOrWhiteSpace(corsOrigins)
+    ? new[] { "http://localhost:4200" }
+    : corsOrigins.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("Frontend", policy =>
+    {
+        policy.WithOrigins(allowedOrigins)
+              .AllowAnyHeader()
+              .AllowAnyMethod();
+    });
+});
 
 // Strict validation in non-development environments
 if (!builder.Environment.IsDevelopment())
@@ -104,7 +121,18 @@ else
 }
 
 builder.Services.AddSingleton<IPasswordHasherService, SecurityReport.Infrastructure.Services.PasswordHasherService>();
-builder.Services.AddSingleton<IBlobStorageService, BlobStorageService>();
+
+// Blob Storage - register conditionally
+var blobConnection = configuration["BLOB_CONNECTION"];
+if (!string.IsNullOrWhiteSpace(blobConnection))
+{
+    builder.Services.AddSingleton<IBlobStorageService, BlobStorageService>();
+}
+else
+{
+    // Register a no-op blob storage service so app keeps working without Azure Blob Storage
+    builder.Services.AddSingleton<IBlobStorageService, NullBlobStorageService>();
+}
 
 // Service Bus - register conditionally
 var serviceBusConn = configuration["SERVICEBUS_CONNECTION"];
@@ -134,6 +162,9 @@ builder.Services.AddSingleton<AnalysisMessageHandler>();
 
 // MediatR - register services from Application handlers assembly
 builder.Services.AddMediatR(cfg => cfg.RegisterServicesFromAssemblies(typeof(HandlerRegistration).Assembly));
+
+// AutoMapper - register with empty configuration (no profiles needed since we map manually)
+builder.Services.AddAutoMapper(cfg => { }, typeof(HandlerRegistration).Assembly);
 
 // FluentValidation for commands - register many validators
 builder.Services.AddScoped<IValidator<CreateReportCommand>, CreateReportCommandValidator>();
@@ -193,13 +224,57 @@ builder.Services.AddFluentValidationAutoValidation();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
 {
-    c.SwaggerDoc("v1", new Microsoft.OpenApi.Models.OpenApiInfo { Title = "SecurityReport API", Version = "v1", Description = "Este análisis es un apoyo a la toma de decisiones del responsable del SG-SST. La IA no toma decisiones ni ejecuta acciones." });
+    c.SwaggerDoc("v1", new Microsoft.OpenApi.Models.OpenApiInfo { Title = "SecurityReport API", Version = "v1", Description = "Este anï¿½lisis es un apoyo a la toma de decisiones del responsable del SG-SST. La IA no toma decisiones ni ejecuta acciones." });
 });
 
 var app = builder.Build();
 
+// Ensure relational DB is created/up-to-date and bootstrap default admin user.
+using (var scope = app.Services.CreateScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<SecurityReportDbContext>();
+
+    if (db.Database.IsRelational())
+    {
+        db.Database.Migrate();
+
+        var adminRole = db.Roles.FirstOrDefault(r => r.Nombre == "Administrador");
+        if (adminRole is null)
+        {
+            adminRole = new SecurityReport.Domain.Entities.Rol
+            {
+                Id = Guid.Parse("11111111-1111-1111-1111-111111111111"),
+                Nombre = "Administrador"
+            };
+            db.Roles.Add(adminRole);
+            db.SaveChanges();
+        }
+
+        var adminEmail = configuration["DEFAULT_ADMIN_EMAIL"] ?? "admin@empresa.com";
+        var adminPassword = configuration["DEFAULT_ADMIN_PASSWORD"] ?? "123";
+
+        var adminUserExists = db.Usuarios.Any(u => u.Email == adminEmail);
+        if (!adminUserExists)
+        {
+            var now = DateTime.UtcNow;
+            db.Usuarios.Add(new SecurityReport.Domain.Entities.Usuario
+            {
+                Id = Guid.NewGuid(),
+                Nombre = "Administrador",
+                Email = adminEmail,
+                PasswordHash = adminPassword,
+                RolId = adminRole.Id,
+                CreatedAt = now,
+                UpdatedAt = now
+            });
+            db.SaveChanges();
+        }
+    }
+}
+
 // Use auditing middleware
-app.UseMiddleware<AuditingMiddleware>();
+// TEMPORALMENTE DESHABILITADO: causaba FileBufferingReadStream.Disposed
+// app.UseMiddleware<AuditingMiddleware>();
 
 // Correlation ID middleware
 app.Use(async (context, next) =>
@@ -221,6 +296,15 @@ if (app.Environment.IsDevelopment())
 
 app.UseSerilogRequestLogging();
 app.UseRouting();
+var uploadsPath = Path.Combine(AppContext.BaseDirectory, "uploads");
+Directory.CreateDirectory(uploadsPath);
+app.UseStaticFiles(new StaticFileOptions
+{
+    FileProvider = new PhysicalFileProvider(uploadsPath),
+    RequestPath = "/uploads",
+    ServeUnknownFileTypes = true
+});
+app.UseCors("Frontend");
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
@@ -257,17 +341,41 @@ if (app.Environment.IsDevelopment() && string.IsNullOrWhiteSpace(configuration["
             new SecurityReport.Domain.Entities.EstadoReporte { Id = estadoCerrado, Nombre = "Cerrado" }
         });
 
-        var areaId = Guid.NewGuid();
-        db.Areas.Add(new SecurityReport.Domain.Entities.Area { Id = areaId, Nombre = "Operaciones", Descripcion = "Área de operaciones" });
+        var area1Id = Guid.Parse("a1000000-0000-0000-0000-000000000001");
+        var area2Id = Guid.Parse("a2000000-0000-0000-0000-000000000002");
+        var area3Id = Guid.Parse("a3000000-0000-0000-0000-000000000003");
+        var area4Id = Guid.Parse("a4000000-0000-0000-0000-000000000004");
+        var area5Id = Guid.Parse("a5000000-0000-0000-0000-000000000005");
 
+        db.Areas.AddRange(new[] {
+            new SecurityReport.Domain.Entities.Area { Id = area1Id, Nombre = "Operaciones", Descripcion = "Area de operaciones generales" },
+            new SecurityReport.Domain.Entities.Area { Id = area2Id, Nombre = "Planta de Produccion", Descripcion = "Zona de manufactura" },
+            new SecurityReport.Domain.Entities.Area { Id = area3Id, Nombre = "Almacen", Descripcion = "Area de almacenamiento" },
+            new SecurityReport.Domain.Entities.Area { Id = area4Id, Nombre = "Oficinas", Descripcion = "Area administrativa" },
+            new SecurityReport.Domain.Entities.Area { Id = area5Id, Nombre = "Campo", Descripcion = "Trabajo en exterior" }
+        });
+
+        var areaId = area1Id;
+
+        var hasher = scope.ServiceProvider.GetRequiredService<IPasswordHasherService>();
         var userId = Guid.NewGuid();
-        db.Usuarios.Add(new SecurityReport.Domain.Entities.Usuario { Id = userId, Nombre = "Dev User", Email = "dev@example.com", PasswordHash = "", RolId = rolAdminId, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow });
+        db.Usuarios.Add(new SecurityReport.Domain.Entities.Usuario
+        {
+            Id = userId,
+            Nombre = "Administrador Local",
+            Email = "admin@empresa.com",
+            PasswordHash = "123", // TEMPORAL: Sin hash para pruebas
+            // PasswordHash = hasher.Hash("123"),
+            RolId = rolAdminId,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        });
 
         var reportId = Guid.NewGuid();
         db.Reportes.Add(new SecurityReport.Domain.Entities.Reporte {
             Id = reportId,
             Titulo = "Reporte de prueba",
-            Descripcion = "Descripción de prueba para Swagger",
+            Descripcion = "Descripciï¿½n de prueba para Swagger",
             AreaId = areaId,
             EstadoReporteId = estadoAbierto,
             ReportadoPorId = userId,

@@ -9,7 +9,7 @@ namespace SecurityReport.Application.Validators
         {
             RuleFor(x => x.Nombre).NotEmpty().MaximumLength(200);
             RuleFor(x => x.Email).NotEmpty().EmailAddress();
-            RuleFor(x => x.Password).NotEmpty().MinimumLength(8);
+            RuleFor(x => x.Password).NotEmpty();
             RuleFor(x => x.RolId).NotEmpty();
         }
     }

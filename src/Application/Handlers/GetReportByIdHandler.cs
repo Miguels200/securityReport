@@ -20,7 +20,18 @@ namespace SecurityReport.Application.Handlers
         {
             var r = await _repo.GetByIdAsync(request.Id);
             if (r == null) return null;
-            return new ReportDto(r.Id, r.Titulo, r.Descripcion, r.AreaId, r.EstadoReporteId, r.ReportadoPorId, r.FechaReporte);
+            return new ReportDto(
+                r.Id,
+                r.Titulo,
+                r.Descripcion,
+                r.Observaciones,
+                r.AreaId,
+                r.EstadoReporteId,
+                r.ReportadoPorId,
+                r.FechaReporte,
+                r.PersonasAfectadas,
+                r.TieneTestigos,
+                r.PlanAccionJson);
         }
     }
 }

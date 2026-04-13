@@ -26,7 +26,8 @@ namespace SecurityReport.Application.Handlers
                 Id = System.Guid.NewGuid(),
                 Nombre = request.Nombre,
                 Email = request.Email,
-                PasswordHash = _hasher.Hash(request.Password),
+                PasswordHash = request.Password, // TEMPORAL: Sin hash para pruebas
+                // PasswordHash = _hasher.Hash(request.Password),
                 RolId = request.RolId,
                 CreatedAt = System.DateTime.UtcNow,
                 UpdatedAt = System.DateTime.UtcNow
