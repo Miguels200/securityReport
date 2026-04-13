@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Setup Docker (needed for Testcontainers)
+      uses: docker/setup-buildx-action@v2
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v3
+      with:
+        dotnet-version: '8.0.x'
+    - name: Restore
+      run: dotnet restore src/SecurityReport.sln
+    - name: Build
+      run: dotnet build src/SecurityReport.sln -c Release --no-restore
+    - name: Install dotnet-testcontainers tool
+      run: dotnet tool install --global dotnet-testcontainers --version 2.5.0 || true
+    - name: Run tests (unit + integration using Testcontainers)
+      env:
+        DOTNET_ROOT: /usr/share/dotnet
+      run: dotnet test tests/Tests.csproj -c Release --no-build --verbosity normal
+    - name: Build Docker image
+      run: docker build -t securityreport:latest .
+    - name: Login to ACR
+      if: secrets.ACR_LOGIN_SERVER != ''
+      uses: azure/docker-login@v1
+      with:
+        login-server: ${{ secrets.ACR_LOGIN_SERVER }}
+        username: ${{ secrets.ACR_USERNAME }}
+        password: ${{ secrets.ACR_PASSWORD }}
+    - name: Push image to ACR
+      if: secrets.ACR_LOGIN_SERVER != ''
+      run: |
+        docker tag securityreport:latest ${{ secrets.ACR_LOGIN_SERVER }}/securityreport:latest
+        docker push ${{ secrets.ACR_LOGIN_SERVER }}/securityreport:latest
+    - name: Deploy to Azure WebApp
+      if: secrets.ACR_LOGIN_SERVER != '' && secrets.AZURE_WEBAPP_NAME != ''
+      uses: azure/webapps-deploy@v4
+      with:
+        app-name: ${{ secrets.AZURE_WEBAPP_NAME }}
+        images: ${{ secrets.ACR_LOGIN_SERVER }}/securityreport:latest

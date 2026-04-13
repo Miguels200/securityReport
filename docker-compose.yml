@@ -1,0 +1,32 @@
+version: '3.8'
+services:
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    environment:
+      SA_PASSWORD: "Your_strong!Passw0rd"
+      ACCEPT_EULA: "Y"
+    ports:
+      - "1433:1433"
+    healthcheck:
+      test: ["CMD", "/opt/mssql-tools/bin/sqlcmd", "-S", "localhost", "-U", "sa", "-P", "Your_strong!Passw0rd", "-Q", "select 1"]
+    volumes:
+      - sqlserverdata:/var/opt/mssql
+
+  app:
+    build: .
+    ports:
+      - "5000:80"
+    environment:
+      - DB_CONNECTION=Server=sqlserver,1433;Database=SecurityReportDb;User Id=sa;Password=Your_strong!Passw0rd;
+      - ASPNETCORE_ENVIRONMENT=Development
+      - JWT_ISSUER=SecurityReport
+      - JWT_AUDIENCE=SecurityReportUsers
+      - JWT_SECRET=supersecret_jwt_key_change_me
+      - AZURE_OPENAI_ENDPOINT=
+      - AZURE_OPENAI_API_KEY=
+      - AZURE_OPENAI_DEPLOYMENT=
+    depends_on:
+      - sqlserver
+
+volumes:
+  sqlserverdata:
