@@ -136,6 +136,28 @@ namespace SecurityReport.Infrastructure.Persistence
                 new RolPermiso { RolId = rolAdminId, PermisoId = permisoAccederAdminId }
             );
 
+            // Enums de clasificacion de riesgo se persisten como texto legible (no ordinales)
+            // para trazabilidad/auditoria y exportacion directa en las pruebas de la tesis.
+            modelBuilder.Entity<Reporte>()
+                .Property(r => r.NivelReportadoUsuario)
+                .HasConversion<string>();
+
+            modelBuilder.Entity<AnalisisIA>()
+                .Property(a => a.TipoRiesgo)
+                .HasConversion<string>();
+
+            modelBuilder.Entity<AnalisisIA>()
+                .Property(a => a.NivelRiesgo)
+                .HasConversion<string>();
+
+            modelBuilder.Entity<AnalisisIA>()
+                .Property(a => a.Prioridad)
+                .HasConversion<string>();
+
+            modelBuilder.Entity<AnalisisIA>()
+                .Property(a => a.Origen)
+                .HasConversion<string>();
+
             // Additional configuration as needed
         }
     }

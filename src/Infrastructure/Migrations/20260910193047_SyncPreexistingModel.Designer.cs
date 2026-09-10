@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using SecurityReport.Infrastructure.Persistence;
 
@@ -11,9 +12,11 @@ using SecurityReport.Infrastructure.Persistence;
 namespace Infrastructure.Migrations
 {
     [DbContext(typeof(SecurityReportDbContext))]
-    partial class SecurityReportDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260910193047_SyncPreexistingModel")]
+    partial class SyncPreexistingModel
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -60,22 +63,8 @@ namespace Infrastructure.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
 
-                    b.Property<string>("ErrorMensaje")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("Justificacion")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("NivelRiesgo")
-                        .HasColumnType("nvarchar(max)");
-
                     b.Property<string>("Origen")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("Prioridad")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("RecomendacionesJson")
+                        .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<Guid>("ReporteId")
@@ -94,9 +83,6 @@ namespace Infrastructure.Migrations
 
                     b.Property<string>("Tipo")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("TipoRiesgo")
                         .HasColumnType("nvarchar(max)");
 
                     b.HasKey("Id");
@@ -388,9 +374,6 @@ namespace Infrastructure.Migrations
 
                     b.Property<DateTime>("FechaReporte")
                         .HasColumnType("datetime2");
-
-                    b.Property<string>("NivelReportadoUsuario")
-                        .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("Observaciones")
                         .IsRequired()

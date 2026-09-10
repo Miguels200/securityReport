@@ -1,12 +1,13 @@
 using System;
 using System.Text.Json;
 using System.Threading.Tasks;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using Polly;
+using SecurityReport.Application.DTOs;
 using SecurityReport.Application.Interfaces;
-using SecurityReport.Infrastructure.Services;
+using SecurityReport.Domain.Entities;
 
 namespace SecurityReport.Infrastructure.Background
 {
@@ -27,40 +28,80 @@ namespace SecurityReport.Infrastructure.Background
         {
             using var scope = _provider.CreateScope();
             var analysisRepo = scope.ServiceProvider.GetRequiredService<IAnalysisRepository>();
-            var aiClient = scope.ServiceProvider.GetRequiredService<IAzureOpenAIClient>();
+            var classificationService = scope.ServiceProvider.GetRequiredService<IRiskClassificationService>();
             var db = scope.ServiceProvider.GetRequiredService<SecurityReport.Infrastructure.Persistence.SecurityReportDbContext>();
+
+            // Reclamo atomico Pending -> Processing. Si otro worker ya lo tomo, no se llama a Azure OpenAI.
+            var claimed = await analysisRepo.TryMarkProcessingAsync(analysisId);
+            if (!claimed)
+            {
+                _logger.LogInformation("Analysis {Id} ya fue reclamado por otro worker o no esta Pending; se omite.", analysisId);
+                return;
+            }
 
             var analysis = await analysisRepo.GetByIdAsync(analysisId);
             if (analysis == null)
             {
-                _logger.LogWarning("Analysis {Id} not found", analysisId);
+                _logger.LogWarning("Analysis {Id} no encontrado tras reclamarlo", analysisId);
                 return;
             }
 
-            analysis.Status = "Processing";
-            analysis.AttemptCount += 1;
-            analysis.StartedAt = DateTime.UtcNow;
-            await analysisRepo.UpdateAsync(analysis);
+            var report = await db.Reportes
+                .Include(r => r.Area)
+                .Include(r => r.TipoReporte)
+                .FirstOrDefaultAsync(r => r.Id == analysis.ReporteId);
 
-            var report = await db.Reportes.FindAsync(analysis.ReporteId);
             if (report == null)
             {
                 analysis.Status = "Failed";
+                analysis.ErrorMensaje = "El reporte asociado ya no existe.";
+                analysis.CompletedAt = DateTime.UtcNow;
                 await analysisRepo.UpdateAsync(analysis);
                 return;
             }
 
-            var prompt = $"Analiza y resume: {report.Descripcion}";
+            try
+            {
+                var request = new RiskClassificationRequest(
+                    report.Id,
+                    report.Titulo,
+                    report.Descripcion,
+                    report.Area?.Nombre ?? string.Empty,
+                    report.TipoReporte?.Nombre ?? string.Empty,
+                    string.Empty,
+                    string.Empty,
+                    report.PersonasAfectadas,
+                    report.TieneTestigos);
 
-            var policy = Polly.Policy.Handle<Exception>().WaitAndRetryAsync(new[] { TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(10) });
-            var result = await policy.ExecuteAsync(async () => await aiClient.GetCompletionsAsync(prompt, _config["AZURE_OPENAI_DEPLOYMENT"] ?? string.Empty));
+                var result = await classificationService.ClassifyAsync(request);
 
-            analysis.ResultadoJson = JsonSerializer.Serialize(new { result, generatedAt = DateTime.UtcNow });
-            analysis.Status = "Completed";
-            analysis.CompletedAt = DateTime.UtcNow;
-            await analysisRepo.UpdateAsync(analysis);
+                analysis.TipoRiesgo = result.TipoRiesgo;
+                analysis.NivelRiesgo = result.NivelRiesgo;
+                analysis.Prioridad = result.Prioridad;
+                analysis.Justificacion = result.Justificacion;
+                analysis.RecomendacionesJson = JsonSerializer.Serialize(result.Recomendaciones);
+                analysis.Origen = result.Origen;
+                analysis.ErrorMensaje = result.ErrorMensaje;
+                analysis.ResultadoJson = JsonSerializer.Serialize(result);
+                // Solo ERROR (fallo definitivo de Azure OpenAI) se marca Failed; NULL_CLIENT y HEURISTIC
+                // producen un resultado utilizable (con Origen claramente distinguible) y se marcan Completed.
+                analysis.Status = result.Origen == OrigenAnalisis.ERROR ? "Failed" : "Completed";
+                analysis.CompletedAt = DateTime.UtcNow;
+                await analysisRepo.UpdateAsync(analysis);
 
-            _logger.LogInformation("Processed analysis {Id}", analysisId);
+                _logger.LogInformation("Analysis {Id} procesado con Origen={Origen}, Status={Status}", analysisId, result.Origen, analysis.Status);
+            }
+            catch (Exception ex)
+            {
+                // Defensa adicional: cualquier fallo no controlado por el servicio de clasificacion
+                // tambien debe cerrar el analisis como Failed, nunca dejarlo colgado en Processing.
+                _logger.LogError(ex, "Error inesperado procesando analysis {Id}", analysisId);
+                analysis.Status = "Failed";
+                analysis.ErrorMensaje = "Error inesperado durante el analisis.";
+                analysis.CompletedAt = DateTime.UtcNow;
+                await analysisRepo.UpdateAsync(analysis);
+            }
         }
     }
 }
+

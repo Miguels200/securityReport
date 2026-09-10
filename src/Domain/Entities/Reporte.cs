@@ -12,6 +12,11 @@ namespace SecurityReport.Domain.Entities
         public int PersonasAfectadas { get; set; } = 1;
         public bool TieneTestigos { get; set; }
         public string? PlanAccionJson { get; set; }
+
+        // Nivel de riesgo elegido manualmente por el usuario en el formulario.
+        // Se conserva por separado del nivel determinado por IA (AnalisisIA.NivelRiesgo) para
+        // permitir comparacion posterior; NO debe sobrescribirse ni usarse como sugerencia al modelo.
+        public NivelRiesgo? NivelReportadoUsuario { get; set; }
         public Guid AreaId { get; set; }
         public Area? Area { get; set; }
         public Guid EstadoReporteId { get; set; }

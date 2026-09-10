@@ -108,7 +108,14 @@ else
 
 // Services
 builder.Services.AddScoped<IAIAnalysisService, AzureOpenAIService>();
-// Azure OpenAI client implementation registration
+builder.Services.AddScoped<IRiskClassificationService, AzureOpenAIRiskClassificationService>();
+
+// Selector de proveedor de IA. AI_PROVIDER es la fuente principal de seleccion (no debe
+// seleccionarse Azure accidentalmente por variables antiguas si AI_PROVIDER=OPENAI).
+var aiProvider = AiProviderResolver.GetConfiguredProvider(configuration);
+
+// Azure OpenAI client (se registra siempre como IAzureOpenAIClient para no romper nada que
+// dependa de el directamente; el adaptador provider-neutral decide si realmente se usa).
 var azureOpenAiEndpoint = configuration["AZURE_OPENAI_ENDPOINT"];
 var azureOpenAiApiKey = configuration["AZURE_OPENAI_API_KEY"];
 if (!string.IsNullOrWhiteSpace(azureOpenAiEndpoint) && !string.IsNullOrWhiteSpace(azureOpenAiApiKey))
@@ -118,6 +125,38 @@ if (!string.IsNullOrWhiteSpace(azureOpenAiEndpoint) && !string.IsNullOrWhiteSpac
 else
 {
     builder.Services.AddSingleton<IAzureOpenAIClient, NullAzureOpenAIClient>();
+}
+
+switch (aiProvider)
+{
+    case AiProviderResolver.Openai:
+        var openAiApiKey = configuration["OPENAI_API_KEY"];
+        var openAiModel = configuration["OPENAI_MODEL"];
+        if (!string.IsNullOrWhiteSpace(openAiApiKey) && !string.IsNullOrWhiteSpace(openAiModel))
+        {
+            builder.Services.AddSingleton<IAITextClient, OpenAIClientImpl>();
+        }
+        else
+        {
+            Log.Warning("AI_PROVIDER=OPENAI pero OPENAI_API_KEY/OPENAI_MODEL no estan configurados. Usando cliente nulo (fallback heuristico).");
+            builder.Services.AddSingleton<IAITextClient, NullAITextClient>();
+        }
+        break;
+
+    case AiProviderResolver.AzureOpenai:
+        if (!string.IsNullOrWhiteSpace(azureOpenAiEndpoint) && !string.IsNullOrWhiteSpace(azureOpenAiApiKey))
+        {
+            builder.Services.AddSingleton<IAITextClient, AzureOpenAIClientAdapter>();
+        }
+        else
+        {
+            Log.Warning("AI_PROVIDER=AZURE_OPENAI pero AZURE_OPENAI_ENDPOINT/AZURE_OPENAI_API_KEY no estan configurados. Usando cliente nulo (fallback heuristico).");
+            builder.Services.AddSingleton<IAITextClient, NullAITextClient>();
+        }
+        break;
+
+    default:
+        throw new InvalidOperationException($"AI_PROVIDER='{aiProvider}' no reconocido. Valores soportados: OPENAI, AZURE_OPENAI.");
 }
 
 builder.Services.AddSingleton<IPasswordHasherService, SecurityReport.Infrastructure.Services.PasswordHasherService>();
@@ -177,8 +216,13 @@ builder.Services.AddScoped<IValidator<UpdateReportCommand>, UpdateReportCommandV
 builder.Services.AddScoped<IValidator<DeleteReportCommand>, DeleteReportCommandValidator>();
 
 // Background worker - use ServiceBusWorker in addition to previous worker
-// Only register AIAnalysisWorker if DB is configured (or InMemory in dev it's configured above)
-builder.Services.AddHostedService<AIAnalysisWorker>();
+// Decision: ServiceBusWorker y AIAnalysisWorker NUNCA deben estar activos simultaneamente
+// (evita que ambos procesen el mismo AnalisisIA). Si Service Bus esta configurado, es el
+// unico consumidor; AIAnalysisWorker solo actua como fallback local cuando no hay Service Bus.
+if (string.IsNullOrWhiteSpace(serviceBusConn))
+{
+    builder.Services.AddHostedService<AIAnalysisWorker>();
+}
 
 // Authentication & Authorization
 var jwtSecret = configuration["JWT_SECRET"];

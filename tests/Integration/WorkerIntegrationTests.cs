@@ -3,6 +3,7 @@ using Xunit;
 
 namespace Tests.Integration
 {
+    [Trait("Category", "RequiresDocker")]
     public class WorkerIntegrationTests
     {
         [Fact(Skip = "Requires SQL Server container and env variables")]

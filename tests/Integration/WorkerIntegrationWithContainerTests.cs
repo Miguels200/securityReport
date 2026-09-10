@@ -12,6 +12,11 @@ using SecurityReport.Application.Interfaces;
 
 namespace Tests.Integration
 {
+    // [PENDIENTE DE EJECUCION EN ENTORNO CON DOCKER]. Requiere Docker Desktop/daemon + SQL Server
+    // Testcontainers real; no tiene defecto logico demostrado, solo depende de infraestructura
+    // externa no disponible en este entorno. Para ejecucion local estandar, excluir con:
+    //   dotnet test --filter "Category!=RequiresDocker"
+    [Trait("Category", "RequiresDocker")]
     public class WorkerIntegrationWithContainerTests : IAsyncLifetime
     {
         private readonly SqlTestcontainerFixture _fixture = new SqlTestcontainerFixture();

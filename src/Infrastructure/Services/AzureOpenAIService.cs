@@ -5,26 +5,27 @@ using System.Text.Json;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using SecurityReport.Domain.Entities;
 
 namespace SecurityReport.Infrastructure.Services
 {
     public class AzureOpenAIService : IAIAnalysisService
     {
-        private readonly IAzureOpenAIClient _client;
-        private readonly string _deployment;
+        private readonly IAITextClient _client;
+        private readonly IConfiguration _config;
         private readonly ILogger<AzureOpenAIService> _logger;
 
-        public AzureOpenAIService(IAzureOpenAIClient client, IConfiguration config, ILogger<AzureOpenAIService> logger)
+        public AzureOpenAIService(IAITextClient client, IConfiguration config, ILogger<AzureOpenAIService> logger)
         {
             _client = client;
+            _config = config;
             _logger = logger;
-            _deployment = config["AZURE_OPENAI_DEPLOYMENT"] ?? throw new ArgumentNullException("AZURE_OPENAI_DEPLOYMENT");
         }
 
         public async Task<string> AnalyzeReportTextAsync(Guid reporteId, string text, string tipo)
         {
             var prompt = BuildPrompt(text, tipo);
-            var result = await _client.GetCompletionsAsync(prompt, _deployment);
+            var result = await _client.GetCompletionAsync(prompt);
 
             var output = JsonSerializer.Serialize(new
             {
@@ -44,30 +45,44 @@ namespace SecurityReport.Infrastructure.Services
             var prompt = BuildPlanAccionPrompt(req, normativa);
 
             string rawJson = string.Empty;
-            bool generadoConIA = false;
+            OrigenAnalisis? origenPorFallo = null;
+            string? errorMensaje = null;
 
             try
             {
-                rawJson = await _client.GetCompletionsAsync(prompt, _deployment, maxTokens: 2000);
-                generadoConIA = !string.IsNullOrWhiteSpace(rawJson);
+                rawJson = await _client.GetCompletionAsync(prompt, maxTokens: 2000);
             }
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "IA no disponible para plan de accion de reporte {Id}, usando reglas heuristicas.", req.ReporteId);
+                origenPorFallo = OrigenAnalisis.ERROR;
+                errorMensaje = ex.Message.Length <= 300 ? ex.Message : ex.Message[..300];
             }
 
-            if (generadoConIA && !string.IsNullOrWhiteSpace(rawJson))
+            if (origenPorFallo == null && !string.IsNullOrWhiteSpace(rawJson))
             {
                 var parsed = TryParseIA(rawJson, normativa, req);
                 if (parsed != null)
                 {
                     parsed.GeneradoConIA = true;
+                    parsed.Origen = AiProviderResolver.GetSuccessOrigin(_config);
                     return parsed;
                 }
+
+                // Respuesta no vacia pero JSON invalido/no parseable: es HEURISTIC, no ERROR.
+                origenPorFallo = OrigenAnalisis.HEURISTIC;
             }
 
-            // Fallback heuristico basado en nivel de riesgo y tipo
-            return BuildHeuristicPlan(req, normativa);
+            // NullAITextClient responde vacio sin excepcion (ningun proveedor de IA configurado).
+            origenPorFallo ??= OrigenAnalisis.NULL_CLIENT;
+
+            // Fallback heuristico basado en nivel de riesgo y tipo. Origen NUNCA se reporta como
+            // exitoso aqui, incluso si el motivo real fue un ERROR (se conserva por separado).
+            var plan = BuildHeuristicPlan(req, normativa);
+            plan.GeneradoConIA = false;
+            plan.Origen = origenPorFallo.Value;
+            plan.ErrorMensaje = errorMensaje;
+            return plan;
         }
 
         // ─── Prompt ────────────────────────────────────────────────────────────────

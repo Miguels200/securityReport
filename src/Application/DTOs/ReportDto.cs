@@ -13,5 +13,6 @@ namespace SecurityReport.Application.DTOs
         DateTime FechaReporte,
         int PersonasAfectadas,
         bool TieneTestigos,
-        string? PlanAccionJson);
+        string? PlanAccionJson,
+        Guid? AnalysisId = null);
 }

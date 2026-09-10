@@ -175,7 +175,13 @@ namespace SecurityReport.Api.Controllers
                 }).ToList() ?? new List<object>(),
                 Observaciones = string.IsNullOrWhiteSpace(reporte.Observaciones)
                     ? ExtraerObservacionesDesdeDescripcion(reporte.Descripcion)
-                    : reporte.Observaciones
+                    : reporte.Observaciones,
+                // Ultimo analisis de clasificacion de riesgo (Tipo = clasificacion_riesgo) asociado a este reporte.
+                AnalysisId = reporte.Analisis?
+                    .Where(a => a.Tipo == SecurityReport.Application.Common.AnalisisTipos.ClasificacionRiesgo)
+                    .OrderByDescending(a => a.CreatedAt)
+                    .Select(a => (Guid?)a.Id)
+                    .FirstOrDefault()
             };
 
             return Ok(dto);

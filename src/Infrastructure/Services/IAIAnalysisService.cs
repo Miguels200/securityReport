@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using SecurityReport.Domain.Entities;
 
 namespace SecurityReport.Infrastructure.Services
 {
@@ -33,7 +34,12 @@ namespace SecurityReport.Infrastructure.Services
         public TiempoEjecucionIA TiempoEjecucion { get; set; } = new();
         public List<string> NormativaAplicable { get; set; } = new();
         public string Disclaimer { get; set; } = string.Empty;
+        // Conservado por compatibilidad con el frontend existente; se deriva de Origen == AZURE_OPENAI.
         public bool GeneradoConIA { get; set; }
+        // Origen real del plan: unicamente AZURE_OPENAI proviene realmente del modelo de IA.
+        public OrigenAnalisis Origen { get; set; }
+        // Mensaje corto de diagnostico (sin secretos) cuando Origen = ERROR.
+        public string? ErrorMensaje { get; set; }
     }
 
     public class RecursosIA

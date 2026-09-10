@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using SecurityReport.Infrastructure.Persistence;
 
@@ -11,9 +12,11 @@ using SecurityReport.Infrastructure.Persistence;
 namespace Infrastructure.Migrations
 {
     [DbContext(typeof(SecurityReportDbContext))]
-    partial class SecurityReportDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260910193124_AddAIClassificationFields")]
+    partial class AddAIClassificationFields
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
